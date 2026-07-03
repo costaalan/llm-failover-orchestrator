@@ -27,6 +27,30 @@ param. Este sistema orquestra 7 agentes especialistas para:
 | Catalogo de projetos | — | ✅ 15 projetos ficticios (n8n, LangGraph, LangChain, Langflow, Agno) |
 | Decisao humana | — | ✅ simulated-human-approver |
 
+### Como funciona a demo
+
+Mesmo com o monitor real rodando em background consultando as status pages de verdade,
+a **demo simula a queda** de um provedor para que o visitante veja todo o pipeline em acao:
+
+1. O visitante seleciona **Anthropic** ou **OpenAI** como provedor em falha
+2. Um **injetor de falha simulado** dispara o evento (claramente rotulado como `simulated_injection`)
+3. O orquestrador trata o evento como se fosse real — a origem (real vs simulada) e a **unica diferenca**
+4. Os **6 agentes especialistas** entram em acao sequencialmente:
+   - 🔍 **Monitor** — "Queda detectada no provedor X!"
+   - 🗺️ **Impacto** — lista um por um os projetos afetados
+   - ⚠️ **Risco** — analisa cada projeto com IA local (Ollama) e sugere fallback
+   - 👤 **Humano** — o agente `simulated-human-approver` "le" as recomendacoes e decide (aprova/nega/pede mais info)
+   - 🔄 **Fallback** — migra projetos aprovados para modelo local
+   - 📋 **Auditoria** — gera relatorio de divergencia
+5. Tudo aparece em **tempo real** no chat lateral e nos cards do pipeline
+6. Quando termina, o **loop automatico** alterna para o outro provedor e recomeca
+
+A interface deixa claro o tempo todo:
+- 🔵 **Monitor Real** — badge pulsando, indicando que o status dos provedores e verdadeiro
+- 🧪 **SIMULADO** — badge amarela que aparece durante a simulacao
+- Banner fixo: "Modo demonstracao — falha simulada"
+- Mensagens no chat com icone 🧪 Simulador
+
 O monitor real roda em background o tempo todo. A injecao de falha e apenas
 para demonstracao — o visitante ve o pipeline reagir como se fosse uma queda real.
 
