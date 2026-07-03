@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -100,25 +100,59 @@ def get_projects():
 class SimulateRequest(BaseModel):
     provider: str  # "anthropic" | "openai"
 
+import threading
+import queue
+
+pipeline_results = {}
+pipeline_queue = queue.Queue()
+
+def _run_pipeline_async(provider):
+    """Roda pipeline em background e guarda resultado."""
+    import sys, traceback
+    sys.path.insert(0, '/opt/data/llm-failover-orchestrator')
+    from orchestrator.engine import run_pipeline
+    try:
+        result = run_pipeline("simulated_injection", provider)
+        pipeline_results[provider] = {"status": "completed", **result}
+        print(f"[ASYNC] Pipeline completed for {provider}: {len(result.get('projects_affected',[]))} projetos")
+    except Exception as e:
+        traceback.print_exc()
+        pipeline_results[provider] = {"status": "error", "error": str(e)}
+        print(f"[ASYNC] Pipeline error for {provider}: {e}")
+
 
 @app.post("/api/simulate-failure")
 def simulate_failure(req: SimulateRequest):
-    """Dispara pipeline com falha simulada e retorna resultado completo."""
+    """Dispara pipeline assincrona e retorna imediatamente."""
+    provider = req.provider
+    pipeline_results[provider] = {"status": "processing"}
+    t = threading.Thread(target=_run_pipeline_async, args=(provider,), daemon=True)
+    t.start()
+    return {"status": "processing", "provider": provider}
+
+
+@app.get("/api/simulate")
+def simulate_failure_get():
+    """Inicia pipeline e aguarda resultado."""
+    provider = "anthropic"
+    import sys, traceback
+    sys.path.insert(0, '/opt/data/llm-failover-orchestrator')
     from orchestrator.engine import run_pipeline
-    
-    # Executar pipeline sincrono
-    event = run_pipeline("simulated_injection", req.provider)
-    
-    return {
-        "status": "completed",
-        "provider": req.provider,
-        "source": "simulated_injection",
-        "projects_affected": event.get("projects_affected", []),
-        "risk_analysis": event.get("risk_analysis", []),
-        "human_decisions": event.get("human_decisions", []),
-        "fallback_results": event.get("fallback_results", []),
-        "audit_result": event.get("audit_result", {}),
-    }
+    try:
+        result = run_pipeline("simulated_injection", provider)
+        pipeline_results[provider] = {"status": "completed", **result}
+        return {"status": "completed", **result}
+    except Exception as e:
+        traceback.print_exc()
+        pipeline_results[provider] = {"status": "error", "error": str(e)}
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/api/pipeline-status")
+def pipeline_status():
+    provider = "anthropic"
+    result = pipeline_results.get(provider, {"status": "not_started"})
+    return result
 
 
 # --- WebSocket ---

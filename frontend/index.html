@@ -241,16 +241,14 @@ async function simularFalha() {
     setStage('🔍 Monitor: queda confirmada no ' + provider);
     scrollToBottom();
     
-    // Chamar API
-    const resp = await fetch('/llm-failover/api/simulate-failure', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ provider }),
-    });
+    // Chamar API (agora sincrona, retorna resultado completo)
+    addChat('⏰ Sistema', 'Executando pipeline...', 'monitor');
+    
+    const resp = await fetch('/llm-failover/api/simulate');
     const data = await resp.json();
     
     if (data.status !== 'completed') {
-        addChat('❌ Sistema', 'Erro ao executar pipeline', 'audit');
+        addChat('❌ Sistema', 'Erro ao executar pipeline: ' + (data.error || 'desconhecido'), 'audit');
         document.getElementById('status-msg').textContent = '❌ Erro';
         running = false;
         document.getElementById('btn-simular').disabled = false;

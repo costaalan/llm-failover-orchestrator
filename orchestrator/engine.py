@@ -192,6 +192,12 @@ def agent_human_approval(event: EventState) -> EventState:
     decisions = []
     
     for item in event["risk_analysis"]:
+        # Garantir campos obrigatorios
+        item.setdefault("fallback_local_seguro", True)
+        item.setdefault("decisao_irreversivel", False)
+        item.setdefault("nivel_risco", "medio")
+        item.setdefault("fluxo_id", "unknown")
+        
         # Logica de decisao simulada
         if item["nivel_risco"] == "critico" and item["decisao_irreversivel"]:
             decision = "denied"
