@@ -1,0 +1,174 @@
+"""
+FastAPI Backend - LLM Failover Orchestrator.
+Endpoints: monitor real, injecao de falha, pipeline, websocket.
+"""
+import os
+import sys
+import json
+import asyncio
+import threading
+import datetime
+from pathlib import Path
+from contextlib import asynccontextmanager
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active: list[WebSocket] = []
+    
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active.append(ws)
+    
+    def disconnect(self, ws: WebSocket):
+        if ws in self.active:
+            self.active.remove(ws)
+    
+    async def broadcast(self, data: dict):
+        dead = []
+        for ws in self.active:
+            try:
+                await ws.send_json(data)
+            except:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+
+manager = ConnectionManager()
+last_real_status = {"anthropic": {"status": "unknown"}, "openai": {"status": "unknown"}}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Iniciar monitor real em background
+    async def poll_real_status():
+        from services.real_status_monitor.monitor import check_all
+        while True:
+            try:
+                result = check_all()
+                global last_real_status
+                last_real_status = result["providers"]
+                await manager.broadcast({"event": "real_status_update", "data": result})
+            except Exception as e:
+                print(f"[MONITOR] Error: {e}")
+            await asyncio.sleep(60)
+    
+    task = asyncio.create_task(poll_real_status())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="LLM Failover Orchestrator", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- Endpoints ---
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "llm-failover-orchestrator"}
+
+
+@app.get("/api/real-status")
+def get_real_status():
+    return {"providers": last_real_status}
+
+
+@app.get("/api/projects")
+def get_projects():
+    cat_path = Path(__file__).parent.parent / "simulation" / "synthetic-projects" / "catalog.json"
+    with open(cat_path) as f:
+        projects = json.load(f)
+    return {"projects": projects, "total": len(projects)}
+
+
+class SimulateRequest(BaseModel):
+    provider: str  # "anthropic" | "openai"
+
+
+@app.post("/api/simulate-failure")
+async def simulate_failure(req: SimulateRequest):
+    """Dispara pipeline com falha simulada."""
+    from orchestrator.engine import run_pipeline
+    
+    def run_and_broadcast():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        event = run_pipeline("simulated_injection", req.provider)
+        
+        # Broadcast de cada estagio
+        stages = ["monitor", "impact_mapping", "risk_analysis", "human_approval",
+                   "fallback_execution", "restoration", "audit"]
+        
+        for stage in stages:
+            loop.run_until_complete(manager.broadcast({
+                "event": "pipeline_stage",
+                "data": {
+                    "stage": stage,
+                    "source": "simulated_injection",
+                    "provider_affected": req.provider,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                }
+            }))
+        
+        # Broadcast resultado completo
+        loop.run_until_complete(manager.broadcast({
+            "event": "pipeline_complete",
+            "data": {
+                "projects_affected": len(event.get("projects_affected", [])),
+                "risk_analysis": event.get("risk_analysis", []),
+                "human_decisions": event.get("human_decisions", []),
+                "fallback_results": event.get("fallback_results", []),
+                "audit_result": event.get("audit_result", {}),
+            }
+        }))
+        loop.close()
+    
+    thread = threading.Thread(target=run_and_broadcast, daemon=True)
+    thread.start()
+    
+    return {"status": "pipeline_started", "provider": req.provider, "source": "simulated_injection"}
+
+
+# --- WebSocket ---
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await manager.connect(ws)
+    try:
+        # Enviar status inicial
+        await ws.send_json({"event": "real_status_update", "data": {"providers": last_real_status}})
+        
+        while True:
+            data = await ws.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("command") == "ping":
+                    await ws.send_json({"event": "pong"})
+            except:
+                pass
+    except WebSocketDisconnect:
+        manager.disconnect(ws)
+
+
+# Frontend estatico
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

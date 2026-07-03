@@ -1,0 +1,134 @@
+[
+  {
+    "fluxo_id": "flow-001",
+    "plataforma": "n8n",
+    "provedor_atual": "anthropic",
+    "modelo": "claude-sonnet-4",
+    "alimenta": "bot_whatsapp",
+    "categoria_uso": "texto_livre",
+    "criticidade_negocio": "alta",
+    "tolerancia_atraso_horas": 2,
+    "depende_de_features": ["contexto_longo", "json_estruturado"]
+  },
+  {
+    "fluxo_id": "flow-002",
+    "plataforma": "langgraph",
+    "provedor_atual": "openai",
+    "modelo": "gpt-4o",
+    "alimenta": "dashboard_bi",
+    "categoria_uso": "analise_dados_quantitativa",
+    "criticidade_negocio": "media",
+    "tolerancia_atraso_horas": 12,
+    "depende_de_features": ["json_estruturado", "function_calling"]
+  },
+  {
+    "fluxo_id": "flow-003",
+    "plataforma": "langchain",
+    "provedor_atual": "anthropic",
+    "modelo": "claude-sonnet-4",
+    "alimenta": "banco_dados",
+    "categoria_uso": "tool_calling",
+    "criticidade_negocio": "critica",
+    "tolerancia_atraso_horas": 1,
+    "depende_de_features": ["function_calling", "json_estruturado"]
+  },
+  {
+    "fluxo_id": "flow-004",
+    "plataforma": "n8n",
+    "provedor_atual": "openai",
+    "modelo": "gpt-4o-mini",
+    "alimenta": "relatorio_financeiro",
+    "categoria_uso": "analise_dados_quantitativa",
+    "criticidade_negocio": "alta",
+    "tolerancia_atraso_horas": 4,
+    "depende_de_features": ["json_estruturado"]
+  },
+  {
+    "fluxo_id": "flow-005",
+    "plataforma": "langgraph",
+    "provedor_atual": "anthropic",
+    "modelo": "claude-sonnet-4",
+    "alimenta": "moderacao_conteudo",
+    "categoria_uso": "texto_livre",
+    "criticidade_negocio": "alta",
+    "tolerancia_atraso_horas": 1,
+    "depende_de_features": ["contexto_longo"]
+  },
+  {
+    "fluxo_id": "flow-006",
+    "plataforma": "n8n",
+    "provedor_atual": "openai",
+    "modelo": "gpt-4o",
+    "alimenta": "triagem_suporte",
+    "categoria_uso": "texto_livre",
+    "criticidade_negocio": "media",
+    "tolerancia_atraso_horas": 8,
+    "depende_de_features": ["json_estruturado", "function_calling"]
+  },
+  {
+    "fluxo_id": "flow-007",
+    "plataforma": "langchain",
+    "provedor_atual": "anthropic",
+    "modelo": "claude-sonnet-4",
+    "alimenta": "enriquecimento_leads",
+    "categoria_uso": "analise_dados_quantitativa",
+    "criticidade_negocio": "baixa",
+    "tolerancia_atraso_horas": 24,
+    "depende_de_features": ["json_estruturado"]
+  },
+  {
+    "fluxo_id": "flow-008",
+    "plataforma": "langgraph",
+    "provedor_atual": "openai",
+    "modelo": "gpt-4o-mini",
+    "alimenta": "triagem_curriculo",
+    "categoria_uso": "texto_livre",
+    "criticidade_negocio": "media",
+    "tolerancia_atraso_horas": 6,
+    "depende_de_features": ["json_estruturado"]
+  },
+  {
+    "fluxo_id": "flow-009",
+    "plataforma": "n8n",
+    "provedor_atual": "anthropic",
+    "modelo": "claude-sonnet-4",
+    "alimenta": "geracao_conteudo",
+    "categoria_uso": "texto_livre",
+    "criticidade_negocio": "baixa",
+    "tolerancia_atraso_horas": 48,
+    "depende_de_features": ["contexto_longo"]
+  },
+  {
+    "fluxo_id": "flow-010",
+    "plataforma": "langchain",
+    "provedor_atual": "openai",
+    "modelo": "gpt-4o",
+    "alimenta": "aprovacao_credito",
+    "categoria_uso": "decisao_irreversivel",
+    "criticidade_negocio": "critica",
+    "tolerancia_atraso_horas": 0,
+    "depende_de_features": ["json_estruturado", "function_calling", "contexto_longo"]
+  },
+  {
+    "fluxo_id": "flow-011",
+    "plataforma": "langgraph",
+    "provedor_atual": "anthropic",
+    "modelo": "claude-haiku-3",
+    "alimenta": "classificacao_tickets",
+    "categoria_uso": "texto_livre",
+    "criticidade_negocio": "baixa",
+    "tolerancia_atraso_horas": 24,
+    "depende_de_features": ["json_estruturado"]
+  },
+  {
+    "fluxo_id": "flow-012",
+    "plataforma": "n8n",
+    "provedor_atual": "openai",
+    "modelo": "gpt-4o-mini",
+    "alimenta": "pipeline_enriquecimento",
+    "categoria_uso": "analise_dados_quantitativa",
+    "criticidade_negocio": "media",
+    "tolerancia_atraso_horas": 12,
+    "depende_de_features": ["json_estruturado"]
+  }
+]

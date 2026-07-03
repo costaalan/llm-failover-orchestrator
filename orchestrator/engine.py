@@ -1,0 +1,304 @@
+"""
+LLM Failover Orchestrator - Orquestrador multiagente LangGraph.
+Gerencia: monitoramento, mapeamento de impacto, analise de risco,
+aprovacao simulada, execucao de fallback, restauracao e auditoria.
+"""
+import os
+import sys
+import json
+import datetime
+import uuid
+from pathlib import Path
+from typing import TypedDict, Optional, Literal
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Caminhos
+CATALOG_PATH = Path(__file__).parent.parent / "simulation" / "synthetic-projects" / "catalog.json"
+
+# Event schema
+class EventState(TypedDict):
+    event_id: str
+    timestamp: str
+    source: Literal["real_monitor", "simulated_injection"]
+    stage: str
+    provider_affected: str
+    payload: dict
+    projects_affected: list
+    risk_analysis: list
+    human_decisions: list
+    fallback_results: list
+    audit_result: dict
+
+
+def load_catalog() -> list[dict]:
+    with open(CATALOG_PATH) as f:
+        return json.load(f)
+
+
+def generate_event(source: str, provider: str, stage: str = "monitor",
+                   payload: dict = None) -> EventState:
+    return {
+        "event_id": str(uuid.uuid4()),
+        "timestamp": datetime.datetime.now().isoformat(),
+        "source": source,
+        "stage": stage,
+        "provider_affected": provider,
+        "payload": payload or {},
+        "projects_affected": [],
+        "risk_analysis": [],
+        "human_decisions": [],
+        "fallback_results": [],
+        "audit_result": {},
+    }
+
+
+def call_llm_local(prompt: str, system: str = "", max_tokens: int = 500) -> str:
+    """Chama Ollama local para analise de risco."""
+    OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    MODEL = os.environ.get("LOCAL_MODEL_NAME", "llama3.1:8b")
+
+    import urllib.request
+    data = json.dumps({
+        "model": MODEL,
+        "prompt": prompt,
+        "system": system,
+        "stream": False,
+        "options": {"temperature": 0.1, "max_tokens": max_tokens},
+    }).encode()
+
+    try:
+        req = urllib.request.Request(f"{OLLAMA_HOST}/api/generate", data=data,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read())
+            return result.get("response", "").strip()
+    except Exception as e:
+        return f"[LLM ERROR: {e}]"
+
+
+# --- AGENTES ---
+
+def agent_monitor(event: EventState) -> EventState:
+    """Agente 1 - Monitor (real ou simulado)."""
+    print(f"[MONITOR] Evento recebido: source={event['source']}, provider={event['provider_affected']}")
+    event["stage"] = "monitor"
+    event["payload"]["status"] = "outage" if event["source"] == "simulated_injection" else "checking"
+    return event
+
+
+def agent_impact_mapping(event: EventState) -> EventState:
+    """Agente 2 - Mapeia projetos afetados pelo provedor caido."""
+    catalog = load_catalog()
+    provider = event["provider_affected"]
+    
+    affected = [p for p in catalog if p["provedor_atual"] == provider]
+    event["projects_affected"] = affected
+    event["stage"] = "impact_mapping"
+    
+    print(f"[IMPACT_MAPPING] {len(affected)} projetos afetados pelo {provider}")
+    return event
+
+
+def agent_risk_analysis(event: EventState) -> EventState:
+    """Agente 3 - Analisa risco de cada projeto."""
+    analysis = []
+    
+    for proj in event["projects_affected"]:
+        prompt = f"""Analise o risco deste fluxo que depende de {event['provider_affected']}:
+
+Projeto: {proj['fluxo_id']}
+Plataforma: {proj['plataforma']}
+Alimenta: {proj['alimenta']}
+Categoria: {proj['categoria_uso']}
+Criticidade: {proj['criticidade_negocio']}
+Tolerancia a atraso: {proj['tolerancia_atraso_horas']}h
+Features necessarias: {', '.join(proj['depende_de_features'])}
+
+Responda em JSON:
+{{
+  "pode_ficar_parado": true/false,
+  "fallback_local_seguro": true/false,
+  "decisao_irreversivel": true/false,
+  "nivel_risco": "baixo|medio|alto|critico",
+  "justificativa": "texto explicando a recomendacao"
+}}"""
+
+        system = "Voce e um analista de risco de infraestrutura de IA. Responda apenas JSON valido."
+        resposta = call_llm_local(prompt, system)
+        
+        try:
+            parsed = json.loads(resposta)
+        except:
+            parsed = {
+                "pode_ficar_parado": proj["tolerancia_atraso_horas"] > 4,
+                "fallback_local_seguro": proj["categoria_uso"] != "decisao_irreversivel",
+                "decisao_irreversivel": proj["alimenta"] == "aprovacao_credito",
+                "nivel_risco": "critico" if proj["criticidade_negocio"] == "critica" else "medio",
+                "justificativa": "Analise baseada em tolerancia a atraso e criticidade."
+            }
+        
+        analysis.append({
+            "fluxo_id": proj["fluxo_id"],
+            "provedor_atual": proj["provedor_atual"],
+            "alimenta": proj["alimenta"],
+            "criticidade": proj["criticidade_negocio"],
+            **parsed,
+        })
+    
+    event["risk_analysis"] = analysis
+    event["stage"] = "risk_analysis"
+    print(f"[RISK_ANALYSIS] {len(analysis)} projetos analisados")
+    return event
+
+
+def agent_human_approval(event: EventState) -> EventState:
+    """Agente 4 - Humano simulado. toma decisoes como um humano faria."""
+    decisions = []
+    
+    for item in event["risk_analysis"]:
+        # Logica de decisao simulada
+        if item["nivel_risco"] == "critico" and item["decisao_irreversivel"]:
+            decision = "denied"
+            reason = "Fluxo critico e irreversivel. Requer aprovacao humana real."
+        elif item["nivel_risco"] == "critico":
+            decision = "pending_more_info"
+            reason = "Criticidade alta. Simulando pedido de mais informacoes."
+        elif item["fallback_local_seguro"] and item["nivel_risco"] in ["baixo", "medio"]:
+            decision = "approved"
+            reason = "Fallback local seguro e viavel. Tolerancia a atraso adequada."
+        elif not item["fallback_local_seguro"]:
+            decision = "denied"
+            reason = "Fallback local nao seguro para este caso de uso."
+        else:
+            decision = "approved"
+            reason = "Baixo risco. Fallback viavel."
+        
+        decisions.append({
+            "fluxo_id": item["fluxo_id"],
+            "decision": decision,
+            "reason": reason,
+            "simulated_by": "simulated-human-approver",
+        })
+    
+    event["human_decisions"] = decisions
+    event["stage"] = "human_approval"
+    print(f"[HUMAN_APPROVAL] {len(decisions)} decisoes: {sum(1 for d in decisions if d['decision']=='approved')} aprovados")
+    return event
+
+
+def agent_fallback_execution(event: EventState) -> EventState:
+    """Agente 5 - Executa fallback para modelos locais."""
+    results = []
+    
+    for decision in event["human_decisions"]:
+        if decision["decision"] != "approved":
+            continue
+        
+        proj = next((p for p in event["projects_affected"] if p["fluxo_id"] == decision["fluxo_id"]), None)
+        if not proj:
+            continue
+        
+        results.append({
+            "fluxo_id": decision["fluxo_id"],
+            "original_provider": proj["provedor_atual"],
+            "original_model": proj["modelo"],
+            "fallback_model": os.environ.get("LOCAL_MODEL_NAME", "llama3.1:8b"),
+            "platform": proj["plataforma"],
+            "status": "executed",
+            "timestamp": datetime.datetime.now().isoformat(),
+        })
+    
+    event["fallback_results"] = results
+    event["stage"] = "fallback_execution"
+    print(f"[FALLBACK] {len(results)} fallbacks executados")
+    return event
+
+
+def agent_restoration(event: EventState) -> EventState:
+    """Agente 6 - Restaura projetos ao provedor original quando volta."""
+    for fb in event["fallback_results"]:
+        fb["status"] = "reverted"
+        fb["reverted_at"] = datetime.datetime.now().isoformat()
+    
+    event["stage"] = "restoration"
+    print(f"[RESTORATION] {len(event['fallback_results'])} projetos restaurados")
+    return event
+
+
+def agent_audit(event: EventState) -> EventState:
+    """Agente 7 - Auditoria retroativa."""
+    fallback_count = len(event["fallback_results"])
+    denied_count = sum(1 for d in event["human_decisions"] if d["decision"] == "denied")
+    
+    # Simular divergencia
+    total = len(event["risk_analysis"])
+    divergence = round(sum(10 for _ in event["fallback_results"]) / max(1, total), 1)
+    
+    event["audit_result"] = {
+        "total_projects_affected": len(event["projects_affected"]),
+        "fallback_executed": fallback_count,
+        "denied": denied_count,
+        "pending_more_info": sum(1 for d in event["human_decisions"] if d["decision"] == "pending_more_info"),
+        "avg_divergence_score": divergence,
+        "fallback_duration_seconds": 120 + len(event["fallback_results"]) * 15,
+        "timestamp": datetime.datetime.now().isoformat(),
+    }
+    event["stage"] = "audit"
+    print(f"[AUDIT] {event['audit_result']['total_projects_affected']} projetos afetados, {fallback_count} fallbacks")
+    return event
+
+
+# Orquestrador LangGraph
+try:
+    from langgraph.graph import StateGraph, END
+    USE_LANGGRAPH = True
+except ImportError:
+    USE_LANGGRAPH = False
+
+
+def build_orchestrator():
+    """Constroi o grafo LangGraph."""
+    if not USE_LANGGRAPH:
+        return None
+    
+    workflow = StateGraph(EventState)
+    
+    workflow.add_node("monitor", agent_monitor)
+    workflow.add_node("impact_mapping", agent_impact_mapping)
+    workflow.add_node("risk_analysis", agent_risk_analysis)
+    workflow.add_node("human_approval", agent_human_approval)
+    workflow.add_node("fallback_execution", agent_fallback_execution)
+    workflow.add_node("restoration", agent_restoration)
+    workflow.add_node("audit", agent_audit)
+    
+    workflow.set_entry_point("monitor")
+    workflow.add_edge("monitor", "impact_mapping")
+    workflow.add_edge("impact_mapping", "risk_analysis")
+    workflow.add_edge("risk_analysis", "human_approval")
+    workflow.add_edge("human_approval", "fallback_execution")
+    workflow.add_edge("fallback_execution", "restoration")
+    workflow.add_edge("restoration", "audit")
+    workflow.add_edge("audit", END)
+    
+    return workflow.compile()
+
+
+def run_pipeline(source: str, provider: str) -> EventState:
+    """Executa o pipeline completo."""
+    event = generate_event(source, provider)
+    
+    if USE_LANGGRAPH and build_orchestrator():
+        graph = build_orchestrator()
+        final = graph.invoke(event)
+        return final
+    else:
+        # Fallback sequencial
+        event = agent_monitor(event)
+        event = agent_impact_mapping(event)
+        event = agent_risk_analysis(event)
+        event = agent_human_approval(event)
+        event = agent_fallback_execution(event)
+        event = agent_restoration(event)
+        event = agent_audit(event)
+        return event
