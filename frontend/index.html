@@ -90,7 +90,10 @@ header h1 span { color:var(--accent); }
 <body>
 
 <header>
-    <h1>🔁 <span>LLM Failover</span> Orchestrator</h1>
+    <div style="display:flex;align-items:center;gap:16px">
+        <a href="javascript:history.back()" style="color:var(--text2);text-decoration:none;font-size:13px;white-space:nowrap">← Voltar</a>
+        <h1>🔁 <span>LLM Failover</span> Orchestrator</h1>
+    </div>
     <div class="status-row">
         <div class="provider-status"><span class="dot green" id="dot-anthropic"></span> Anthropic <span id="status-anthropic">operational</span></div>
         <div class="provider-status"><span class="dot green" id="dot-openai"></span> OpenAI <span id="status-openai">operational</span></div>
@@ -123,7 +126,28 @@ header h1 span { color:var(--accent); }
 </div>
 
 <script>
-const ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/llm-failover/ws');
+// WebSocket - nao essencial, apenas monitor em tempo real
+let ws = null;
+try {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/llm-failover/ws');
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.event === 'real_status_update' && data.data && data.data.providers) {
+                for (const [prov, info] of Object.entries(data.data.providers)) {
+                    const dot = document.getElementById('dot-' + prov);
+                    const lb = document.getElementById('status-' + prov);
+                    if (dot && lb && !running) {
+                        const s = info.status || 'operational';
+                        dot.className = 'dot ' + (s === 'operational' ? 'green' : s === 'degraded' ? 'yellow' : 'red');
+                        lb.textContent = s;
+                    }
+                }
+            }
+        } catch(e) {}
+    };
+    ws.onerror = () => {}; // silencioso
+} catch(e) {} // WebSocket pode falhar no iframe
 let running = false;
 let msgCount = 0;
 let loopTimer = null;
