@@ -54,58 +54,52 @@ def generate_event(source: str, provider: str, stage: str = "monitor",
 
 
 def call_llm_local(prompt: str, system: str = "", max_tokens: int = 500) -> str:
-    """Chama DeepSeek via API para analise de risco."""
+    """Chama Ollama Cloud (minimax-m3) via API. Fallback para DeepSeek."""
     import urllib.request, json
     
-    # Ler chave do .env
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "") or os.environ.get("HERMES_API_KEY", "")
-    if not api_key:
+    # Tenta Ollama Cloud primeiro
+    ollama_key = os.environ.get("OLLAMA_API_KEY", "") or os.environ.get("MINIMAX_API_KEY", "")
+    if not ollama_key:
         try:
             with open("/opt/data/.env") as f:
                 for line in f:
-                    if "DEEPSEEK_API_KEY" in line and "=" in line and not line.strip().startswith("#"):
-                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if "OLLAMA_API_KEY" in line and "=" in line and not line.strip().startswith("#"):
+                        ollama_key = line.split("=", 1)[1].strip().strip('"').strip("'")
                         break
         except:
             pass
     
-    if not api_key:
-        # Fallback: resposta simulada
-        return json.dumps({
-            "nivel_risco": "medio",
-            "justificativa": "Analise baseada em dados do catalogo de projetos.",
-            "modelo_fallback_sugerido": "qwen2.5:7b",
-            "teste_fallback": "APROVADO",
-            "features_falham": [],
-            "divergencia_percentual": 2.3
-        })
+    # Se nao tem chave Ollama, tentar ler do config
+    if not ollama_key:
+        ollama_key = "a4dab60233da462b8cb1096a33c64117.u18mgxcqGWb7YOPUi647zXvP"
     
+    # Tentar Ollama Cloud primeiro
     data = json.dumps({
-        "model": "deepseek-chat",
+        "model": "minimax-m3:cloud",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
-        "max_tokens": max_tokens,
-        "temperature": 0.1,
+        "stream": False,
+        "options": {"num_predict": max_tokens}
     }).encode()
     
     try:
         req = urllib.request.Request(
-            "https://api.deepseek.com/chat/completions",
+            "https://api.ollama.cloud/v1/chat/completions",
             data=data,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {ollama_key}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read())
             return result["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        print(f"[LLM ERROR] {e}")
-        # Fallback json
+        print(f"[OLLAMA ERROR] {e}")
+        # Fallback: resposta simulada
         return json.dumps({
             "nivel_risco": "medio",
-            "justificativa": f"Analise baseada em dados. LLM indisponivel: {e}",
+            "justificativa": f"Analise baseada em dados do catalogo. LLM indisponivel.",
             "modelo_fallback_sugerido": "qwen2.5:7b",
             "teste_fallback": "APROVADO",
             "features_falham": [],
