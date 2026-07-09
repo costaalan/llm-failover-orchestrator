@@ -91,7 +91,7 @@ def call_llm_local(prompt: str, system: str = "", max_tokens: int = 500) -> str:
             headers={"Authorization": f"Bearer {ollama_key}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=2) as resp:
             result = json.loads(resp.read())
             return result["choices"][0]["message"]["content"].strip()
     except Exception as e:

@@ -154,6 +154,13 @@ def simulate_failure(req: SimulateRequest):
     """Dispara pipeline assincrona e retorna imediatamente."""
     provider = req.provider
     pipeline_results[provider] = {"status": "processing"}
+    
+    # Reset circuit breaker para permitir nova tentativa
+    import sys
+    sys.path.insert(0, '/opt/data/llm-failover-orchestrator')
+    from orchestrator.guardrails import get_circuit_breaker
+    get_circuit_breaker().record_success(provider)
+    
     t = threading.Thread(target=_run_pipeline_async, args=(provider,), daemon=True)
     t.start()
     return {"status": "processing", "provider": provider}
