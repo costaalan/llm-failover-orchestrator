@@ -373,3 +373,22 @@ def run_pipeline(source: str, provider: str) -> EventState:
         event = agent_restoration(event)
         event = agent_audit(event)
         return event
+
+
+def run_pipeline_with_guardrails(source: str, provider: str) -> EventState:
+    """
+    Executa o pipeline com guardrails:
+    - Timeout de 30s por tentativa
+    - Retry com exponential backoff (3 tentativas)
+    - Circuit breaker: 3 falhas consecutivas → pausa de 60s
+    """
+    from orchestrator.guardrails import run_with_retry_and_timeout
+
+    return run_with_retry_and_timeout(
+        run_pipeline,
+        source,
+        provider,
+        max_retries=3,
+        timeout_seconds=30.0,
+        provider=provider,
+    )
